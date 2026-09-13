@@ -107,17 +107,30 @@ exit 0
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="$SCRIPT_DIR/../.env"
 
-WIN_HOST_IP="$(ip route show default 2>/dev/null | awk '/default/ {print $3; exit}')"
-if [ -z "$WIN_HOST_IP" ]; then
-  WIN_HOST_IP="$(awk '/^nameserver/ {print $2; exit}' /etc/resolv.conf 2>/dev/null || true)"
-fi
+# set -e + pipefail 下では検出コマンドの非ゼロ終了がそのまま initializeCommand の
+# 失敗になりコンテナ作成が中断する。ip コマンドが無いホスト（macOS / Docker
+# Desktop）でも止めないよう `|| true` でガードし、失敗時は変数を空のままにする。
+WIN_HOST_IP="$(ip route show default 2>/dev/null | awk '/default/ {print $3; exit}' || true)"
 
 if [ -n "${WIN_HOST_IP:-}" ]; then
   touch "$ENV_FILE"
-  grep -v '^WINDOWS_HOST_IP=' "$ENV_FILE" > "$ENV_FILE.tmp" 2>/dev/null || true
-  mv "$ENV_FILE.tmp" "$ENV_FILE"
+
+  # grep の終了コード: 0=一致あり / 1=一致なし（どちらも .tmp は正常な出力）/
+  # 2=読み取り失敗等のエラー。2 のときに無条件で mv すると空の .tmp が
+  # 既存 .env を上書きし、既存キーが全て消える。0/1 のときだけ差し替え、
+  # それ以外は .tmp を捨てて既存 .env を残す。
+  set +e
+  grep -v '^WINDOWS_HOST_IP=' "$ENV_FILE" > "$ENV_FILE.tmp" 2>/dev/null
+  GREP_STATUS=$?
+  set -e
+
+  if [ "$GREP_STATUS" -le 1 ]; then
+    mv "$ENV_FILE.tmp" "$ENV_FILE"
+  else
+    rm -f "$ENV_FILE.tmp"
+  fi
+
   echo "WINDOWS_HOST_IP=$WIN_HOST_IP" >> "$ENV_FILE"
   echo "init-host: WINDOWS_HOST_IP=$WIN_HOST_IP"
 fi
-
 ```
