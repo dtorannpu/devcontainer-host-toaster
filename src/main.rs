@@ -1,13 +1,3 @@
-// use notify_rust::Notification;
-//
-// fn main() {
-//     Notification::new()
-//         .summary("Firefox News")
-//         .body("This will almost look like a real firefox notification.")
-//         .icon("claude")
-//         .show().expect("TODO: panic message");
-// }
-
 use axum::{
     Json, Router,
     http::StatusCode,
