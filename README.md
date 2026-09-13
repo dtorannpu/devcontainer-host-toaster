@@ -73,7 +73,8 @@ json_escape() {
     printf '%s' "$s"
 }
 
-PAYLOAD=$(printf '{"title":"%s","message":"%s"}' \
+PAYLOAD=$(printf '{"kind":"%s","title":"%s","message":"%s"}' \
+    "$(json_escape "$TYPE")" \
     "$(json_escape "$TITLE")" \
     "$(json_escape "$MESSAGE")")
 

@@ -1,3 +1,5 @@
+pub mod keyboard;
+
 use axum::{
     Json, Router,
     http::StatusCode,
@@ -57,7 +59,9 @@ impl IntoResponse for AppError {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
         .init();
 
     let args = Args::parse();
@@ -98,6 +102,9 @@ async fn not_found() -> AppError {
 struct NotifyRequest {
     title: String,
     message: String,
+    #[allow(dead_code)]
+    #[serde(default)]
+    kind: Option<String>,
 }
 
 async fn notify(Json(payload): Json<NotifyRequest>) -> Result<StatusCode, AppError> {
@@ -161,7 +168,12 @@ mod tests {
     #[tokio::test]
     async fn health_returns_200() {
         let response = app()
-            .oneshot(Request::builder().uri("/health").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
 
