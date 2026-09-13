@@ -1,5 +1,5 @@
 [package]
-name = "toster"
+name = "toaster"
 version = "0.1.0"
 edition = "2024"
 
@@ -15,6 +15,7 @@ anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 clap = { version = "4", features = ["derive", "env"] }
+hidapi = "2.6.7"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

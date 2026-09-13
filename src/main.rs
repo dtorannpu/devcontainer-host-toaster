@@ -16,7 +16,7 @@ use tracing_subscriber::EnvFilter;
 
 /// 起動オプション。CLI引数または環境変数で指定できる。
 #[derive(Parser, Debug)]
-#[command(name = "toster")]
+#[command(name = "toast")]
 struct Args {
     /// リッスンするポート番号
     #[arg(short, long, default_value_t = 8000, env = "PORT")]
