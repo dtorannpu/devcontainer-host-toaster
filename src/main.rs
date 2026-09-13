@@ -7,14 +7,19 @@ use axum::{
     routing::{get, post},
 };
 use clap::Parser;
+use keyboard::{Keyboard, KeyboardConfig};
 use notify_rust::Notification;
 use serde::Deserialize;
 use serde_json::json;
 use std::net::SocketAddr;
 use thiserror::Error;
 use tower_http::{catch_panic::CatchPanicLayer, trace::TraceLayer};
-use tracing::error;
+use tracing::{error, warn};
 use tracing_subscriber::EnvFilter;
+
+// DOIO KB16-01
+const KEYBOARD_VID: u16 = 0xD010;
+const KEYBOARD_PID: u16 = 0x1601;
 
 /// 起動オプション。CLI引数または環境変数で指定できる。
 #[derive(Parser, Debug)]
@@ -112,6 +117,11 @@ async fn notify(Json(payload): Json<NotifyRequest>) -> Result<StatusCode, AppErr
         return Err(AppError::BadRequest("title must not be empty".to_string()));
     }
 
+    // キーボードが繋がっていなくても通知自体は成功させたいので、失敗はログに warn を出すだけに留める。
+    if let Err(err) = tokio::task::spawn_blocking(print_keyboard_via_version).await {
+        warn!(error = ?err, "via version check task panicked");
+    }
+
     // notify-rust はブロッキングAPIなので、ランタイムのスレッドを塞がないよう spawn_blocking で実行する。
     tokio::task::spawn_blocking(move || {
         Notification::new()
@@ -124,6 +134,20 @@ async fn notify(Json(payload): Json<NotifyRequest>) -> Result<StatusCode, AppErr
     .map_err(|err| anyhow::anyhow!("failed to show notification: {err}"))?;
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+fn print_keyboard_via_version() {
+    let config = KeyboardConfig {
+        vid: KEYBOARD_VID,
+        pid: KEYBOARD_PID,
+    };
+
+    let result = Keyboard::new(config).and_then(|keyboard| keyboard.via_version());
+    match result {
+        Ok(Some(version)) => println!("VIA protocol version: {version}"),
+        Ok(None) => println!("VIA protocol version: unknown (no response from device)"),
+        Err(err) => warn!(error = %err, "failed to read keyboard via version"),
+    }
 }
 
 async fn shutdown_signal() {
