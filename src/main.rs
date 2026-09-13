@@ -107,7 +107,6 @@ async fn not_found() -> AppError {
 struct NotifyRequest {
     title: String,
     message: String,
-    #[allow(dead_code)]
     #[serde(default)]
     kind: Option<String>,
 }
@@ -118,8 +117,11 @@ async fn notify(Json(payload): Json<NotifyRequest>) -> Result<StatusCode, AppErr
     }
 
     // キーボードが繋がっていなくても通知自体は成功させたいので、失敗はログに warn を出すだけに留める。
-    if let Err(err) = tokio::task::spawn_blocking(print_keyboard_via_version).await {
-        warn!(error = ?err, "via version check task panicked");
+    let kind = payload.kind.clone();
+    if let Err(err) =
+        tokio::task::spawn_blocking(move || handle_keyboard_signal(kind.as_deref())).await
+    {
+        warn!(error = ?err, "keyboard signal task panicked");
     }
 
     // notify-rust はブロッキングAPIなので、ランタイムのスレッドを塞がないよう spawn_blocking で実行する。
@@ -136,17 +138,51 @@ async fn notify(Json(payload): Json<NotifyRequest>) -> Result<StatusCode, AppErr
     Ok(StatusCode::NO_CONTENT)
 }
 
-fn print_keyboard_via_version() {
+/// notify リクエストの `kind` から、キーボードに送るべき合図を決める。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum KeyboardSignal {
+    Success,
+    Confirm,
+    Error,
+}
+
+/// complete -> Success、permission/idle -> Confirm、それ以外(未指定含む) -> Error。
+fn resolve_keyboard_signal(kind: Option<&str>) -> KeyboardSignal {
+    match kind {
+        Some("complete") => KeyboardSignal::Success,
+        Some("permission") | Some("idle") => KeyboardSignal::Confirm,
+        _ => KeyboardSignal::Error,
+    }
+}
+
+fn handle_keyboard_signal(kind: Option<&str>) {
     let config = KeyboardConfig {
         vid: KEYBOARD_VID,
         pid: KEYBOARD_PID,
     };
 
-    let result = Keyboard::new(config).and_then(|keyboard| keyboard.via_version());
-    match result {
+    let keyboard = match Keyboard::new(config) {
+        Ok(keyboard) => keyboard,
+        Err(err) => {
+            warn!(error = %err, "failed to connect to keyboard");
+            return;
+        }
+    };
+
+    match keyboard.via_version() {
         Ok(Some(version)) => println!("VIA protocol version: {version}"),
         Ok(None) => println!("VIA protocol version: unknown (no response from device)"),
         Err(err) => warn!(error = %err, "failed to read keyboard via version"),
+    }
+
+    let result = match resolve_keyboard_signal(kind) {
+        KeyboardSignal::Success => keyboard.success(),
+        KeyboardSignal::Confirm => keyboard.confirm(),
+        KeyboardSignal::Error => keyboard.error(),
+    };
+
+    if let Err(err) = result {
+        warn!(error = %err, "failed to send keyboard signal");
     }
 }
 
@@ -282,5 +318,34 @@ mod tests {
 
         let json = json_body(response).await;
         assert_eq!(json["error"], "internal server error");
+    }
+
+    #[test]
+    fn resolve_keyboard_signal_maps_complete_to_success() {
+        assert_eq!(
+            resolve_keyboard_signal(Some("complete")),
+            KeyboardSignal::Success
+        );
+    }
+
+    #[test]
+    fn resolve_keyboard_signal_maps_permission_and_idle_to_confirm() {
+        assert_eq!(
+            resolve_keyboard_signal(Some("permission")),
+            KeyboardSignal::Confirm
+        );
+        assert_eq!(
+            resolve_keyboard_signal(Some("idle")),
+            KeyboardSignal::Confirm
+        );
+    }
+
+    #[test]
+    fn resolve_keyboard_signal_maps_unknown_and_missing_kind_to_error() {
+        assert_eq!(
+            resolve_keyboard_signal(Some("something-else")),
+            KeyboardSignal::Error
+        );
+        assert_eq!(resolve_keyboard_signal(None), KeyboardSignal::Error);
     }
 }

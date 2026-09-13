@@ -1,6 +1,8 @@
 # Dev Container Host Toast
 
-Dev Container からホストに通知を送るツール
+Dev Container からホストに通知を送るツール  
+
+DOIO KB16-01のバックライトで通知できるように修正
 
 ## settings.json
 
